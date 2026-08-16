@@ -452,7 +452,28 @@ function shortProvince(name) {
     return name.replace(/省|自治区|市|回族|维吾尔/g, '').trim();
 }
 
+// 债券简称里的地区最可靠：DM 的 province_name 把计划单列市记成母省
+// （26青岛债→山东省），个别批次还会串省（26湖北债→湖南省）。
+var LOCAL_NAME_REGIONS = [
+    '内蒙古', '黑龙江', '新疆', '宁夏', '西藏', '广西', '青海', '甘肃', '陕西',
+    '云南', '贵州', '四川', '重庆', '海南', '广东', '湖南', '湖北', '河南',
+    '山东', '江西', '福建', '安徽', '浙江', '江苏', '上海', '吉林', '辽宁',
+    '山西', '河北', '天津', '北京',
+    '青岛', '深圳', '宁波', '大连', '厦门'
+];
+
+function regionFromBondName(name) {
+    if (!name) return '';
+    var text = ('' + name).replace(/^\d+/, '');
+    for (var i = 0; i < LOCAL_NAME_REGIONS.length; i++) {
+        if (text.indexOf(LOCAL_NAME_REGIONS[i]) === 0) return LOCAL_NAME_REGIONS[i];
+    }
+    return '';
+}
+
 function localRegionLabel(event) {
+    var fromName = regionFromBondName(event.name);
+    if (fromName) return fromName;
     var issuer = event.issuer || '';
     var city = issuer.match(/^(.+?)市人民政府$/);
     if (city) return city[1];
@@ -924,16 +945,7 @@ function renderCalendar() {
                             html += '<div class="event-tag ' + tagCls + '"><span style="visibility:hidden">国债: </span>+' + (gz.length - 3) + '只</div>';
                         }
                     }
-                    // 政金债：仅显示规模
-                    var zj = visible.filter(function(x){ return x.bond_type && x.bond_type.indexOf('政策性') >= 0; });
-                    if (zj.length > 0) {
-                        var zjTotal2 = 0;
-                        for (var k = 0; k < zj.length; k++) {
-                            var amt = parseFloat(zj[k].plan_amount);
-                            if (!isNaN(amt)) zjTotal2 += amt;
-                        }
-                        html += '<div class="event-tag ' + tagCls + '">政金债: ' + (zjTotal2>0?zjTotal2.toFixed(zjTotal2>=10?0:1):'') + '亿</div>';
-                    }
+                    // 政金债不进格子：每日规模信息量低，只在周备注里给周合计
                     // 地方债：规模 + 区域
                     var dfz = visible.filter(function(x){ return x.bond_type && x.bond_type.indexOf('地方') >= 0; });
                     if (dfz.length > 0) {
