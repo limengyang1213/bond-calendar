@@ -348,7 +348,7 @@ body {
     <div class="detail-filters" id="detailFilters" style="margin-bottom:12px;display:none;">
         <span style="font-size:12px;color:#6B8299;align-self:center;margin-right:6px;">一级发行筛选：</span>
         <button class="filter-btn issue active" onclick="toggleDetailIssueFilter('国债', this)">国债</button>
-        <button class="filter-btn issue active" onclick="toggleDetailIssueFilter('政策性', this)">政金债</button>
+        <button class="filter-btn issue" onclick="toggleDetailIssueFilter('政策性', this)">政金债</button>
         <button class="filter-btn issue active" onclick="toggleDetailIssueFilter('地方', this)">地方债</button>
         <span id="detailExtraHint" style="font-size:12px;color:#6B8299;align-self:center;margin-left:10px;"></span>
     </div>
@@ -379,8 +379,9 @@ const CATEGORY_LABEL = {
 };
 const ACTIVE_FILTERS = new Set(['中国宏观', '央行操作', '政府缴款', '一级发行', '海外宏观']);
 
-var DETAIL_ISSUE_FILTERS = new Set(['国债', '政策性', '地方']);
+var DETAIL_ISSUE_FILTERS = new Set(['国债', '地方']);
 var CURRENT_DETAIL_DATE = '';
+var DETAIL_CAT_ORDER = { '央行操作': 0, '中国宏观': 1, '海外宏观': 2, '一级发行': 3, '政府缴款': 4, '利率债': 5 };
 
 function getExtraShowModes() {
     var menu = document.getElementById('extraShowMenu');
@@ -515,6 +516,33 @@ function isNcd(e) {
 
 function isRateMaturityShown(e) {
     return e.category === '利率债' && e.name === '到期' && !isNcd(e);
+}
+
+function omoNum(v) {
+    var n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+}
+
+function isOmoZeroFlow(e) {
+    return e.category === '央行操作' && omoNum(e.amount) === 0 && omoNum(e.expiration) === 0;
+}
+
+function issueTypeRank(e) {
+    if (e.bond_type === '国债') return 0;
+    if (e.bond_type && e.bond_type.indexOf('地方') >= 0) return 1;
+    if (e.bond_type && (e.bond_type.indexOf('政策性') >= 0 || e.bond_type.indexOf('政金') >= 0)) return 2;
+    return 3;
+}
+
+function compareDetailEvents(a, b) {
+    var ca = DETAIL_CAT_ORDER.hasOwnProperty(a.category) ? DETAIL_CAT_ORDER[a.category] : 99;
+    var cb = DETAIL_CAT_ORDER.hasOwnProperty(b.category) ? DETAIL_CAT_ORDER[b.category] : 99;
+    if (ca !== cb) return ca - cb;
+    if (a.category === '一级发行') {
+        var ra = issueTypeRank(a), rb = issueTypeRank(b);
+        if (ra !== rb) return ra - rb;
+    }
+    return 0;
 }
 
 function monthMetricsHtml(monthPrefix) {
@@ -748,6 +776,7 @@ function renderCalendar() {
         var e = EVENTS[i];
         if (!ACTIVE_FILTERS.has(e.category)) continue;
         if (e.category === '利率债' && !isRateMaturityShown(e)) continue;
+        if (isOmoZeroFlow(e)) continue;
         var d = e.date;
         if (!dayEvents[d]) dayEvents[d] = [];
         dayEvents[d].push(e);
@@ -885,7 +914,7 @@ function renderCalendar() {
                         html += '<div class="event-tag ' + tagCls + '">more…</div>';
                     }
                 } else if (cat === '央行操作') {
-                    var nonSummaryItems = items.filter(function(x){ return x.name !== '汇总' && (x.name !== '国库定存' || showOmoExtra); });
+                    var nonSummaryItems = items.filter(function(x){ return x.name !== '汇总' && !isOmoZeroFlow(x) && (x.name !== '国库定存' || showOmoExtra); });
                     if (nonSummaryItems.length === 0) continue;
                     for (var k = 0; k < Math.min(nonSummaryItems.length, 2); k++) {
                         var it = nonSummaryItems[k];
@@ -1042,11 +1071,13 @@ function showDetail(dateStr) {
     var allEvents = EVENTS.filter(function(e) { return e.date === dateStr && ACTIVE_FILTERS.has(e.category) && !isOmoSummary(e); });
     allEvents = allEvents.filter(function(e){ return !isDeferredFinancialMacro(e); });
     allEvents = allEvents.filter(function(e){ return e.category !== '利率债' || isRateMaturityShown(e); });
+    allEvents = allEvents.filter(function(e){ return !isOmoZeroFlow(e); });
     // 详情中央行操作也默认过滤国库定存
     if (!showExtraOMO()) {
         allEvents = allEvents.filter(function(e){ return !(e.category === '央行操作' && e.name === '国库定存'); });
     }
     var events = allEvents.filter(function(e) { return !isHiddenIssueDetail(e); });
+    events.sort(compareDetailEvents);
     var hasIssue = allEvents.some(function(e){ return e.category === '一级发行'; });
     document.getElementById('detailFilters').style.display = hasIssue ? 'flex' : 'none';
     var hint = '';
